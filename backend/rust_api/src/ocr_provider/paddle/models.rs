@@ -30,6 +30,17 @@ pub struct PaddlePollEnvelope {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PaddleSyncEnvelope {
+    #[serde(default, rename = "logId", alias = "traceId")]
+    pub log_id: String,
+    #[serde(default, rename = "errorCode", alias = "code")]
+    pub error_code: i64,
+    #[serde(default, rename = "errorMsg", alias = "msg")]
+    pub error_msg: String,
+    pub result: Option<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PaddlePollData {
     #[serde(default, rename = "jobId")]
     pub job_id: String,

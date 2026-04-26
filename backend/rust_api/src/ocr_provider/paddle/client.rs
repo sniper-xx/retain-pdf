@@ -2,13 +2,14 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{multipart, Client};
 use serde_json::{json, Value};
 
 use crate::ocr_provider::paddle::errors::PaddleProviderError;
 use crate::ocr_provider::paddle::models::{
-    PaddleJsonlLine, PaddlePollData, PaddlePollEnvelope, PaddleSubmitEnvelope,
+    PaddleJsonlLine, PaddlePollData, PaddlePollEnvelope, PaddleSubmitEnvelope, PaddleSyncEnvelope,
 };
 use crate::ocr_provider::types::OcrProviderCapabilities;
 
@@ -55,6 +56,48 @@ impl PaddleClient {
             token: token.into(),
             http,
         }
+    }
+
+    pub fn uses_layout_parsing_endpoint(&self) -> bool {
+        self.base_url
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+            .ends_with("/layout-parsing")
+    }
+
+    pub async fn parse_local_file_sync(
+        &self,
+        file_path: &Path,
+        optional_payload: &Value,
+    ) -> Result<PaddleTrace<PaddleResultPayload>> {
+        let file_bytes = tokio::fs::read(file_path)
+            .await
+            .with_context(|| format!("failed to read upload file {}", file_path.display()))?;
+        let encoded = general_purpose::STANDARD.encode(file_bytes);
+        let file_type = if file_path
+            .extension()
+            .and_then(|item| item.to_str())
+            .map(|item| item.eq_ignore_ascii_case("pdf"))
+            .unwrap_or(false)
+        {
+            0
+        } else {
+            1
+        };
+        let mut payload = sync_optional_payload(optional_payload);
+        payload["file"] = json!(encoded);
+        payload["fileType"] = json!(file_type);
+        self.parse_sync_payload(payload).await
+    }
+
+    pub async fn parse_remote_url_sync(
+        &self,
+        source_url: &str,
+        optional_payload: &Value,
+    ) -> Result<PaddleTrace<PaddleResultPayload>> {
+        let mut payload = sync_optional_payload(optional_payload);
+        payload["file"] = json!(source_url);
+        self.parse_sync_payload(payload).await
     }
 
     pub async fn submit_local_file(
@@ -192,6 +235,9 @@ impl PaddleClient {
     }
 
     pub async fn probe_token(&self) -> Result<PaddleTrace<()>> {
+        if self.uses_layout_parsing_endpoint() {
+            return self.probe_layout_parsing_token().await;
+        }
         let probe_job_id = format!("retain-pdf-token-probe-{}", fastrand::u64(..));
         let response = self
             .http
@@ -281,6 +327,116 @@ impl PaddleClient {
 
     fn auth_header(&self) -> String {
         format!("bearer {}", self.token.trim())
+    }
+
+    async fn parse_sync_payload(&self, payload: Value) -> Result<PaddleTrace<PaddleResultPayload>> {
+        let response = self
+            .http
+            .post(&self.base_url)
+            .header(AUTHORIZATION, self.layout_parsing_auth_header())
+            .header(CONTENT_TYPE, "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|err| {
+                anyhow::Error::new(PaddleProviderError::request_failed("submit", &err, None))
+            })?;
+        let envelope = parse_json_response::<PaddleSyncEnvelope>("submit", response).await?;
+        let trace_id = normalize_trace_id(&envelope.log_id);
+        if envelope.error_code != 0 {
+            return Err(anyhow::Error::new(PaddleProviderError::provider_error(
+                "submit",
+                envelope.error_code,
+                &envelope.error_msg,
+                trace_id.as_deref(),
+            )));
+        }
+        let result = envelope.result.ok_or_else(|| {
+            anyhow::Error::new(PaddleProviderError::invalid_response(
+                "submit",
+                "Paddle sync response missing result",
+                trace_id.as_deref(),
+            ))
+        })?;
+        Ok(PaddleTrace {
+            data: PaddleResultPayload {
+                payload: normalize_sync_payload(result),
+            },
+            trace_id,
+        })
+    }
+
+    async fn probe_layout_parsing_token(&self) -> Result<PaddleTrace<()>> {
+        let response = self
+            .http
+            .post(&self.base_url)
+            .header(AUTHORIZATION, self.layout_parsing_auth_header())
+            .header(CONTENT_TYPE, "application/json")
+            .json(&json!({
+                "file": "",
+                "fileType": 0,
+            }))
+            .send()
+            .await
+            .map_err(|err| {
+                anyhow::Error::new(PaddleProviderError::request_failed("probe", &err, None))
+            })?;
+        let status = response.status();
+        let bytes = response.bytes().await.map_err(|err| {
+            anyhow::Error::new(PaddleProviderError::request_failed("probe", &err, None))
+        })?;
+        let body_text = String::from_utf8_lossy(&bytes).to_string();
+        let envelope = serde_json::from_slice::<PaddleSyncEnvelope>(&bytes).ok();
+        let trace_id = envelope
+            .as_ref()
+            .and_then(|parsed| normalize_trace_id(&parsed.log_id));
+
+        if matches!(
+            status,
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+        ) {
+            return Err(anyhow::Error::new(PaddleProviderError::http_status(
+                "probe",
+                status,
+                &body_text,
+                trace_id.as_deref(),
+                Some("Paddle layout-parsing 鉴权失败"),
+            )));
+        }
+        if status.is_success() {
+            if let Some(parsed) = envelope {
+                if parsed.error_code == 0 || parsed.error_code == 400 {
+                    return Ok(PaddleTrace {
+                        data: (),
+                        trace_id: normalize_trace_id(&parsed.log_id),
+                    });
+                }
+                return Err(anyhow::Error::new(PaddleProviderError::provider_error(
+                    "probe",
+                    parsed.error_code,
+                    &parsed.error_msg,
+                    normalize_trace_id(&parsed.log_id).as_deref(),
+                )));
+            }
+            return Ok(PaddleTrace { data: (), trace_id });
+        }
+        if matches!(
+            status,
+            reqwest::StatusCode::BAD_REQUEST | reqwest::StatusCode::UNPROCESSABLE_ENTITY
+        ) {
+            return Ok(PaddleTrace { data: (), trace_id });
+        }
+        Err(anyhow::Error::new(PaddleProviderError::http_status(
+            "probe",
+            status,
+            &body_text,
+            trace_id.as_deref(),
+            None,
+        )))
+    }
+
+    fn layout_parsing_auth_header(&self) -> String {
+        format!("token {}", self.token.trim())
     }
 }
 
@@ -384,10 +540,36 @@ fn combine_jsonl_payload(text: &str) -> Result<Value> {
     }))
 }
 
+fn sync_optional_payload(optional_payload: &Value) -> Value {
+    optional_payload
+        .as_object()
+        .cloned()
+        .map(Value::Object)
+        .unwrap_or_else(|| json!({}))
+}
+
+fn normalize_sync_payload(result: Value) -> Value {
+    let mut payload = result;
+    if let Some(object) = payload.as_object_mut() {
+        object
+            .entry("_meta".to_string())
+            .or_insert_with(|| json!({ "source": "paddle_layout_parsing_sync" }));
+        if let Some(meta) = object
+            .get_mut("_meta")
+            .and_then(|value| value.as_object_mut())
+        {
+            meta.entry("source".to_string())
+                .or_insert_with(|| json!("paddle_layout_parsing_sync"));
+        }
+    }
+    payload
+}
+
 #[cfg(test)]
 mod tests {
-    use super::combine_jsonl_payload;
     use super::normalize_model_name;
+    use super::{combine_jsonl_payload, normalize_sync_payload};
+    use serde_json::json;
 
     #[test]
     fn combine_jsonl_payload_merges_layout_results_and_data_info() {
@@ -405,6 +587,16 @@ mod tests {
         assert_eq!(merged["dataInfo"]["pages"][0]["width"], 100);
         assert_eq!(merged["_meta"]["source"], "paddle_jsonl");
         assert_eq!(merged["_meta"]["lineCount"], 2);
+    }
+
+    #[test]
+    fn normalize_sync_payload_marks_source() {
+        let payload = normalize_sync_payload(json!({
+            "layoutParsingResults": [],
+            "dataInfo": {}
+        }));
+
+        assert_eq!(payload["_meta"]["source"], "paddle_layout_parsing_sync");
     }
 
     #[test]

@@ -30,6 +30,21 @@ pub(super) async fn run_local_ocr_transport_paddle(
     log_paddle_unsupported_options(job);
     let model_name = normalize_model_name(&job.request_payload.ocr.paddle_model);
     job.request_payload.ocr.paddle_model = model_name.clone();
+    if client.uses_layout_parsing_endpoint() {
+        let result = client
+            .parse_local_file_sync(upload_path, &build_paddle_optional_payload(&model_name))
+            .await
+            .map_err(|err| attach_paddle_runtime_error(job, err, "submit"))?;
+        return finish_paddle_sync_result(
+            deps,
+            job,
+            provider_result_json_path,
+            job_root,
+            parent_job_id,
+            result,
+        )
+        .await;
+    }
     let created = client
         .submit_local_file(
             upload_path,
@@ -62,6 +77,24 @@ pub(super) async fn run_remote_ocr_transport_paddle(
     log_paddle_unsupported_options(job);
     let model_name = normalize_model_name(&job.request_payload.ocr.paddle_model);
     job.request_payload.ocr.paddle_model = model_name.clone();
+    if client.uses_layout_parsing_endpoint() {
+        let result = client
+            .parse_remote_url_sync(
+                &job.request_payload.source.source_url,
+                &build_paddle_optional_payload(&model_name),
+            )
+            .await
+            .map_err(|err| attach_paddle_runtime_error(job, err, "submit"))?;
+        return finish_paddle_sync_result(
+            deps,
+            job,
+            provider_result_json_path,
+            job_root,
+            parent_job_id,
+            result,
+        )
+        .await;
+    }
     let created = client
         .submit_remote_url(
             &job.request_payload.source.source_url,
@@ -192,6 +225,41 @@ async fn run_paddle_poll_loop(
             attach_paddle_runtime_error(job, err, "poll")
         })?;
     }
+}
+
+async fn finish_paddle_sync_result(
+    deps: &ProcessRuntimeDeps,
+    job: &mut JobRuntimeState,
+    provider_result_json_path: &Path,
+    job_root: &Path,
+    parent_job_id: Option<&str>,
+    result: crate::ocr_provider::paddle::PaddleTrace<
+        crate::ocr_provider::paddle::PaddleResultPayload,
+    >,
+) -> Result<()> {
+    let task_id = "layout-parsing-sync".to_string();
+    record_provider_trace(job, result.trace_id.clone());
+    ocr_provider_diagnostics_mut(job).handle.task_id = Some(task_id.clone());
+    job.append_log("paddle layout-parsing sync request completed");
+    job.stage = Some("ocr_processing".to_string());
+    job.stage_detail = Some("Paddle 同步解析已完成，准备翻译".to_string());
+    job.updated_at = now_iso();
+    save_ocr_job(deps, job, parent_job_id).await?;
+
+    let mut payload = result.data.payload;
+    if let Some(meta) = payload.get_mut("_meta").and_then(|v| v.as_object_mut()) {
+        meta.insert("provider".to_string(), json!("paddle"));
+        meta.insert("taskId".to_string(), json!(task_id));
+        meta.insert(
+            "traceId".to_string(),
+            json!(result.trace_id.unwrap_or_default()),
+        );
+    }
+    persist_provider_result(job, provider_result_json_path, &payload).await?;
+    if let Some(markdown_path) = materialize_paddle_markdown_artifacts(&payload, job_root).await? {
+        job.append_log(&format!("published markdown: {}", markdown_path.display()));
+    }
+    Ok(())
 }
 
 fn log_paddle_unsupported_options(job: &mut JobRuntimeState) {

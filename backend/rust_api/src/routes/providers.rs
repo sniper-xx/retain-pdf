@@ -104,9 +104,12 @@ pub async fn validate_paddle_token(
             retryable: false,
             provider_code: Some("0".to_string()),
             provider_message: Some("ok".to_string()),
-            operator_hint: Some(
-                "鉴权已通过；当前使用随机任务 ID 进行只鉴权探测，不会触发真实 OCR 任务".to_string(),
-            ),
+            operator_hint: Some(if client.uses_layout_parsing_endpoint() {
+                "鉴权探测已通过；当前使用空文件请求检查 /layout-parsing 入口，不提交真实 OCR 内容"
+                    .to_string()
+            } else {
+                "鉴权已通过；当前使用随机任务 ID 进行只鉴权探测，不会触发真实 OCR 任务".to_string()
+            }),
             trace_id: result.trace_id,
             base_url: client.base_url.clone(),
             checked_at,
