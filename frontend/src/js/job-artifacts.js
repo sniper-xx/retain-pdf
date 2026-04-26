@@ -18,6 +18,14 @@ export function toAbsoluteApiUrl(value) {
     return "";
   }
   if (/^[a-z][a-z\d+\-.]*:/i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.pathname.startsWith("/api/")) {
+        return `${apiBase()}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch (_err) {
+      return trimmed;
+    }
     return trimmed;
   }
   if (trimmed.startsWith("/")) {
@@ -41,7 +49,7 @@ export function resolveManifestArtifactUrl(
   { includeJobDir = false } = {},
 ) {
   const item = findReadyManifestArtifact(manifestPayload, artifactKey);
-  const raw = trimString(item?.resource_url || item?.resource_path);
+  const raw = trimString(item?.resource_path || item?.resource_url);
   if (!raw) {
     return "";
   }
@@ -66,10 +74,10 @@ export function resolveJobMarkdownContract(job) {
   );
   return {
     ready,
-    jsonUrl: toAbsoluteApiUrl(markdown.json_url || markdown.json_path || actions.open_markdown?.url || actions.open_markdown?.path),
-    rawUrl: toAbsoluteApiUrl(markdown.raw_url || markdown.raw_path || actions.open_markdown_raw?.url || actions.open_markdown_raw?.path),
+    jsonUrl: toAbsoluteApiUrl(markdown.json_path || markdown.json_url || actions.open_markdown?.path || actions.open_markdown?.url),
+    rawUrl: toAbsoluteApiUrl(markdown.raw_path || markdown.raw_url || actions.open_markdown_raw?.path || actions.open_markdown_raw?.url),
     imagesBaseUrl: ensureTrailingSlash(toAbsoluteApiUrl(
-      markdown.images_base_url || markdown.images_base_path || artifacts.markdown_images_base_url
+      markdown.images_base_path || markdown.images_base_url || artifacts.markdown_images_base_url
     )),
     fileName: trimString(markdown.file_name),
     sizeBytes: Number.isFinite(Number(markdown.size_bytes)) ? Number(markdown.size_bytes) : null,

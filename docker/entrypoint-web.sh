@@ -28,3 +28,8 @@ window.__FRONT_RUNTIME_CONFIG__ = {
   baseUrl: "${FRONT_BASE_URL}",
 };
 EOF
+
+if [ ! -f /usr/share/nginx/html/runtime-config.local.js ]; then
+  printf '%s\n' '// Optional local runtime overrides are intentionally empty in Docker.' \
+    > /usr/share/nginx/html/runtime-config.local.js
+fi

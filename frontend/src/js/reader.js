@@ -4,12 +4,13 @@ import {
   PDFLinkService,
   PDFViewer,
 } from "../../node_modules/pdfjs-dist/web/pdf_viewer.mjs";
-import { apiBase, isMockMode, readerMessageTargetOrigin } from "./config.js";
+import { isMockMode, readerMessageTargetOrigin } from "./config.js";
 import { $ } from "./dom.js";
 import { API_PREFIX } from "./constants.js";
 import {
   findReadyManifestArtifact,
   resolveManifestArtifactUrl,
+  toAbsoluteApiUrl,
 } from "./job-artifacts.js";
 import { resolveJobActions } from "./job.js";
 import { getMockJobId } from "./mock.js";
@@ -151,17 +152,7 @@ function getJobIdFromQuery() {
 }
 
 function resolveArtifactUrl(item) {
-  const raw = `${item?.resource_url || item?.resource_path || ""}`.trim();
-  if (!raw) {
-    return "";
-  }
-  if (/^https?:\/\//i.test(raw)) {
-    return raw;
-  }
-  if (raw.startsWith("/")) {
-    return `${apiBase()}${raw}`;
-  }
-  return `${apiBase()}/${raw.replace(/^\.?\//, "")}`;
+  return toAbsoluteApiUrl(item?.resource_path || item?.resource_url || "");
 }
 
 function resolveTranslatedPdfUrl(jobPayload, manifestPayload) {
