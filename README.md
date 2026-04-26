@@ -100,6 +100,12 @@ cd retain-pdf/docker/delivery
 docker compose up -d
 ```
 
+上面的命令默认使用 Docker Hub 上的镜像。如果要从当前仓库源码构建本地镜像：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
 启动后默认访问：
 
 ```text
@@ -129,6 +135,13 @@ cd retain-pdf/docker/delivery
 APP_IMAGE=wxyhgk/retainpdf-app:latest \
 WEB_IMAGE=wxyhgk/retainpdf-web:latest \
 docker compose up -d
+```
+
+如果线上镜像尚未发布到你需要的提交，请使用本地构建覆盖文件：
+
+```bash
+cd retain-pdf/docker/delivery
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 更新后建议执行一次状态检查：

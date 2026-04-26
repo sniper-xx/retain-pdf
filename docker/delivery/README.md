@@ -96,10 +96,12 @@ http://127.0.0.1:40001
 
 - `docker-compose.yml`
   Docker 编排入口。默认直接拉取 Docker Hub 镜像并启动 `app` + `web`。
+- `docker-compose.build.yml`
+  本地构建覆盖文件。用于从当前仓库源码构建 `app` + `web` 镜像，而不是拉取 Docker Hub。
 - `docker/app.env`
   后端运行参数。控制容器内路径、字体、端口、并发和上传限制。
 - `docker/web.env`
-  Docker 公共版前端运行参数。控制前端默认注入的后端 key、模型默认值等。
+  Docker 公共版前端运行参数。控制前端默认注入的后端 key、OCR provider、模型默认值等。
 - `docker/auth.local.json`
   Rust API 鉴权白名单。前端和 CLI 都需要用这里配置的后端 key 才能访问接口。
 
@@ -120,12 +122,16 @@ http://127.0.0.1:40001
   前端内部使用的 API 基地址。通常留空，让前端自动走同源代理。
 - `FRONT_X_API_KEY`
   前端自动附带给后端的 `X-API-Key`。必须和 `docker/auth.local.json` 中某个值一致。
+- `FRONT_OCR_PROVIDER`
+  前端默认 OCR provider。当前支持 `paddle` 或 `mineru`。
 - `FRONT_MINERU_TOKEN`
   前端默认带出的 MinerU token。留空时，最终用户自己在页面弹窗里填写。
+- `FRONT_PADDLE_TOKEN`
+  前端默认带出的 Paddle token。留空时，最终用户自己在页面弹窗里填写。
 - `FRONT_MODEL_API_KEY`
   前端默认带出的模型 API key。留空时由最终用户自己填写。
 - `FRONT_MODEL`
-  前端默认模型名，例如 `deepseek-chat`。
+  前端默认模型名，例如 `deepseek-v4-flash`。
 - `FRONT_BASE_URL`
   前端默认模型服务地址，例如 `https://api.deepseek.com/v1`。
 - `FRONT_PROVIDER_PRESET`
@@ -165,7 +171,7 @@ http://127.0.0.1:40001
 - 宿主机默认只暴露 `40001`
 - 前端通过同源代理访问后端
 - 普通用户不需要理解 `API Base`
-- Docker 公共版前端当前只暴露 `DeepSeek` 这个 provider
+- Docker 公共版前端默认使用 Paddle OCR 和 DeepSeek 模型配置
 - 页面里提示的 `200MB / 600 页` 来自 MinerU 的上游限制，不能超过这个范围
 - 容器内仍然保留：
   - `41000`：完整 Rust API
@@ -176,7 +182,9 @@ http://127.0.0.1:40001
 
 如果你想让前端默认带出下游配置，可以继续填写：
 
+- `FRONT_OCR_PROVIDER`
 - `FRONT_MINERU_TOKEN`
+- `FRONT_PADDLE_TOKEN`
 - `FRONT_MODEL_API_KEY`
 - `FRONT_MODEL`
 - `FRONT_BASE_URL`
@@ -193,6 +201,28 @@ WEB_IMAGE=wxyhgk/retainpdf-web:latest \
 docker compose up -d
 ```
 
+## 如果要从当前仓库源码构建
+
+默认 `docker-compose.yml` 使用 Docker Hub 上的远端镜像。如果你刚拉了仓库代码，想部署当前源码，请使用本地构建覆盖文件：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+可选构建参数：
+
+```bash
+RUST_VERSION=1.88 \
+PYTHON_VERSION=3.11 \
+TYPST_VERSION=0.14.2 \
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+本地构建默认镜像名是：
+
+- `retainpdf-app:local`
+- `retainpdf-web:local`
+
 # 开发者
 
 如果你想直接用 CLI 调接口，而不是走前端页面，可以按下面方式调用。
@@ -203,8 +233,9 @@ docker compose up -d
 export HOST="http://127.0.0.1:40001"
 export X_API_KEY="replace-with-your-backend-key"
 export MINERU_TOKEN="your-mineru-token"
+export PADDLE_TOKEN="your-paddle-token"
 export MODEL_API_KEY="your-model-api-key"
-export MODEL="deepseek-chat"
+export MODEL="deepseek-v4-flash"
 export BASE_URL="https://api.deepseek.com/v1"
 ```
 
@@ -237,21 +268,33 @@ curl -X POST "$HOST/api/v1/jobs" \
   -H "X-API-Key: $X_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": "mineru",
-    "upload_id": "your-upload-id",
-    "mode": "sci",
-    "model": "'"$MODEL"'",
-    "base_url": "'"$BASE_URL"'",
-    "api_key": "'"$MODEL_API_KEY"'",
-    "mineru_token": "'"$MINERU_TOKEN"'",
-    "workers": 100,
-    "batch_size": 1,
-    "classify_batch_size": 12,
-    "render_mode": "auto",
-    "compile_workers": 8,
-    "model_version": "vlm",
-    "language": "ch",
-    "rule_profile_name": "general_sci"
+    "workflow": "book",
+    "source": {
+      "upload_id": "your-upload-id"
+    },
+    "ocr": {
+      "provider": "paddle",
+      "paddle_token": "'"$PADDLE_TOKEN"'",
+      "model_version": "vlm",
+      "language": "ch"
+    },
+    "translation": {
+      "mode": "sci",
+      "model": "'"$MODEL"'",
+      "base_url": "'"$BASE_URL"'",
+      "api_key": "'"$MODEL_API_KEY"'",
+      "workers": 100,
+      "batch_size": 1,
+      "classify_batch_size": 12,
+      "rule_profile_name": "general_sci"
+    },
+    "render": {
+      "render_mode": "auto",
+      "compile_workers": 8
+    },
+    "runtime": {
+      "timeout_seconds": 1800
+    }
   }'
 ```
 
@@ -328,7 +371,8 @@ curl -X POST -H "X-API-Key: $X_API_KEY" \
 curl -X POST "$HOST/api/v1/translate/bundle" \
   -H "X-API-Key: $X_API_KEY" \
   -F "file=@/absolute/path/to/your.pdf" \
-  -F "mineru_token=$MINERU_TOKEN" \
+  -F "ocr_provider=paddle" \
+  -F "paddle_token=$PADDLE_TOKEN" \
   -F "base_url=$BASE_URL" \
   -F "api_key=$MODEL_API_KEY" \
   -F "model=$MODEL" \

@@ -12,6 +12,8 @@ fi
 REGISTRY_USER="${REGISTRY_USER:-wxyhgk}"
 APP_REPO="${APP_REPO:-${REGISTRY_USER}/retainpdf-app}"
 WEB_REPO="${WEB_REPO:-${REGISTRY_USER}/retainpdf-web}"
+RUST_VERSION="${RUST_VERSION:-1.88}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
 TYPST_VERSION="${TYPST_VERSION:-0.14.2}"
 PUSH_LATEST="${PUSH_LATEST:-1}"
 
@@ -41,6 +43,8 @@ WEB_LATEST_IMAGE="${WEB_REPO}:latest"
 
 docker build \
   "${build_arg_flags[@]}" \
+  --build-arg "RUST_VERSION=${RUST_VERSION}" \
+  --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "TYPST_VERSION=${TYPST_VERSION}" \
   -f "${ROOT_DIR}/docker/Dockerfile.app" \
   -t "${APP_VERSION_IMAGE}" \
