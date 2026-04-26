@@ -10,6 +10,7 @@ export function mountWorkflowFeature({
   defaultModelBaseUrl,
   defaultMineruToken,
   defaultPaddleToken,
+  defaultPaddleApiUrl,
   defaultOcrProvider,
   defaultModelApiKey,
   normalizeWorkflow,
@@ -266,13 +267,18 @@ export function mountWorkflowFeature({
     const token = definition.id === "paddle"
       ? ($("paddle_token")?.value || defaultPaddleToken())
       : ($("mineru_token")?.value || defaultMineruToken());
-    return {
+    const payload = {
       provider,
       [definition.tokenField]: token,
       model_version: DEFAULT_MODEL_VERSION,
       language: DEFAULT_LANGUAGE,
       page_ranges: pageRanges,
     };
+    const paddleApiUrl = defaultPaddleApiUrl?.() || "";
+    if (provider === "paddle" && paddleApiUrl) {
+      payload.paddle_api_url = paddleApiUrl;
+    }
+    return payload;
   }
 
   function buildTranslationPayload(developerConfig) {

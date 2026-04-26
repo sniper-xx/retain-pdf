@@ -5,6 +5,7 @@ import {
   applyKeyInputs,
   defaultMineruToken,
   defaultOcrProvider,
+  defaultPaddleApiUrl,
   defaultPaddleToken,
   defaultModelApiKey,
   defaultModelBaseUrl,
@@ -252,6 +253,7 @@ async function initializePage() {
     defaultModelBaseUrl,
     defaultMineruToken,
     defaultPaddleToken,
+    defaultPaddleApiUrl,
     defaultOcrProvider,
     defaultModelApiKey,
     normalizeWorkflow,
@@ -325,7 +327,7 @@ async function initializePage() {
       if (providerId === "paddle") {
         return validatePaddleToken(apiPrefix, {
           paddle_token: token,
-          base_url: "https://paddleocr.aistudio-app.com",
+          base_url: defaultPaddleApiUrl() || "https://paddleocr.aistudio-app.com",
         });
       }
       return validateMineruToken(apiPrefix, {

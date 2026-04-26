@@ -9,6 +9,8 @@ window.__FRONT_RUNTIME_CONFIG__ = {
   mineruToken: "",
   // OCR provider credential, submitted under payload.ocr.paddle_token.
   paddleToken: "",
+  // Paddle OCR endpoint root. Leave empty to use backend default.
+  paddleApiUrl: "",
   // Downstream model credential, submitted under payload.translation.api_key.
   modelApiKey: "",
   model: "deepseek-v4-flash",

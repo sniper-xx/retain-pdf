@@ -97,6 +97,10 @@ export function defaultPaddleToken() {
   return typeof runtimeConfig.paddleToken === "string" ? runtimeConfig.paddleToken : "";
 }
 
+export function defaultPaddleApiUrl() {
+  return typeof runtimeConfig.paddleApiUrl === "string" ? runtimeConfig.paddleApiUrl.trim() : "";
+}
+
 export function defaultOcrProvider() {
   return normalizeOcrProvider(runtimeConfig.ocrProvider);
 }
