@@ -17,9 +17,11 @@ use super::download_adapter::{
 pub async fn download_pdf(
     State(state): State<AppState>,
     AxumPath(job_id): AxumPath<String>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     download_document_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         false,
         resolve_output_pdf,
@@ -32,10 +34,12 @@ pub async fn download_pdf(
 pub async fn download_artifact_by_key(
     State(state): State<AppState>,
     AxumPath((job_id, artifact_key)): AxumPath<(String, String)>,
+    headers: HeaderMap,
     Query(query): Query<ArtifactDownloadQuery>,
 ) -> Result<Response, AppError> {
     registered_artifact_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         &artifact_key,
         query.include_job_dir,
@@ -47,10 +51,12 @@ pub async fn download_artifact_by_key(
 pub async fn download_ocr_artifact_by_key(
     State(state): State<AppState>,
     AxumPath((job_id, artifact_key)): AxumPath<(String, String)>,
+    headers: HeaderMap,
     Query(query): Query<ArtifactDownloadQuery>,
 ) -> Result<Response, AppError> {
     registered_artifact_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         &artifact_key,
         query.include_job_dir,
@@ -62,9 +68,11 @@ pub async fn download_ocr_artifact_by_key(
 pub async fn download_normalized_document(
     State(state): State<AppState>,
     AxumPath(job_id): AxumPath<String>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     download_document_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         false,
         resolve_normalized_document,
@@ -77,9 +85,11 @@ pub async fn download_normalized_document(
 pub async fn download_ocr_normalized_document(
     State(state): State<AppState>,
     AxumPath(job_id): AxumPath<String>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     download_document_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         true,
         resolve_normalized_document,
@@ -92,9 +102,11 @@ pub async fn download_ocr_normalized_document(
 pub async fn download_normalization_report(
     State(state): State<AppState>,
     AxumPath(job_id): AxumPath<String>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     download_document_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         false,
         resolve_normalization_report,
@@ -107,9 +119,11 @@ pub async fn download_normalization_report(
 pub async fn download_ocr_normalization_report(
     State(state): State<AppState>,
     AxumPath(job_id): AxumPath<String>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     download_document_response(
         &build_jobs_route_deps(&state),
+        &headers,
         &job_id,
         true,
         resolve_normalization_report,

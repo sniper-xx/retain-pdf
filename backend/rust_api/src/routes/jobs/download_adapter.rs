@@ -14,6 +14,7 @@ fn jobs_facade_ref<'a>(deps: &'a JobsRouteDeps<'a>) -> crate::services::jobs::Jo
 
 pub async fn download_document_response(
     deps: &JobsRouteDeps<'_>,
+    headers: &HeaderMap,
     job_id: &str,
     ocr_only: bool,
     resolve_path: impl Fn(&JobSnapshot, &Path) -> Option<PathBuf>,
@@ -22,6 +23,7 @@ pub async fn download_document_response(
 ) -> Result<Response, AppError> {
     jobs_facade_ref(deps)
         .download_job_document_response(
+            headers,
             job_id,
             ocr_only,
             resolve_path,
@@ -58,12 +60,13 @@ pub async fn bundle_response(deps: &JobsRouteDeps<'_>, job_id: &str) -> Result<R
 
 pub async fn registered_artifact_response(
     deps: &JobsRouteDeps<'_>,
+    headers: &HeaderMap,
     job_id: &str,
     artifact_key: &str,
     include_job_dir: bool,
     ocr_only: bool,
 ) -> Result<Response, AppError> {
     jobs_facade_ref(deps)
-        .registered_artifact_response(job_id, artifact_key, include_job_dir, ocr_only)
+        .registered_artifact_response(headers, job_id, artifact_key, include_job_dir, ocr_only)
         .await
 }

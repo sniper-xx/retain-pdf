@@ -1,36 +1,22 @@
 import { $ } from "../../dom.js";
-import { buildFrontendPageUrl, isTrustedWindowMessage } from "../../config.js";
+import {
+  buildFrontendPageUrl,
+  frontendApiKey,
+  isMockMode,
+  isTrustedWindowMessage,
+} from "../../config.js";
+import {
+  downloadBlob,
+  fileNameFromDisposition,
+  prepareDownloadTarget,
+  saveResponseDownload,
+  triggerNativeDownload,
+} from "../../downloads.js";
 import {
   findReadyManifestArtifact,
   resolveManifestArtifactUrl,
 } from "../../job-artifacts.js";
 import { resolveJobActions } from "../../job.js";
-
-let pdfDocumentModulePromise = null;
-
-async function loadPdfDocument() {
-  if (!pdfDocumentModulePromise) {
-    pdfDocumentModulePromise = import("../../../../node_modules/pdf-lib/dist/pdf-lib.esm.js")
-      .then((module) => module.PDFDocument);
-  }
-  return pdfDocumentModulePromise;
-}
-
-function fileNameFromDisposition(disposition, fallback) {
-  if (!disposition || typeof disposition !== "string") {
-    return fallback;
-  }
-  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match && utf8Match[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch (_err) {
-      return utf8Match[1];
-    }
-  }
-  const plainMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
-  return plainMatch && plainMatch[1] ? plainMatch[1] : fallback;
-}
 
 function jobIdFromReaderUrl(url) {
   const raw = `${url || ""}`.trim();
@@ -103,17 +89,6 @@ function resolveOriginalPdfName(state) {
   return sanitizeFilenamePart(stripExtension(originalName));
 }
 
-function downloadBlob(blob, filename) {
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-}
-
 function easeOutCubic(value) {
   return 1 - ((1 - value) ** 3);
 }
@@ -169,15 +144,25 @@ function currentReaderArtifactUrls(state) {
 }
 
 async function downloadProtectedResource(fetchProtected, url, fallbackName, preferredName = "") {
+  if (!frontendApiKey() && !isMockMode()) {
+    triggerNativeDownload(url, preferredName || fallbackName);
+    return;
+  }
+  const downloadTarget = await prepareDownloadTarget(preferredName || fallbackName);
+  if (downloadTarget.kind === "aborted") {
+    return;
+  }
   const resp = await fetchProtected(url);
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`下载失败: ${resp.status} ${text || "unknown error"}`);
   }
-  const blob = await resp.blob();
   const disposition = resp.headers.get("content-disposition") || "";
   const finalName = `${preferredName || ""}`.trim() || fileNameFromDisposition(disposition, fallbackName);
-  downloadBlob(blob, finalName);
+  await saveResponseDownload(resp, {
+    target: downloadTarget,
+    filename: finalName,
+  });
 }
 
 async function fetchProtectedBytes(fetchProtected, url, label) {
@@ -189,48 +174,25 @@ async function fetchProtectedBytes(fetchProtected, url, label) {
   return resp.arrayBuffer();
 }
 
-async function buildMergedComparePdf(sourceBytes, translatedBytes) {
-  const PDFDocument = await loadPdfDocument();
-  const mergedDoc = await PDFDocument.create();
-  const sourceDoc = await PDFDocument.load(sourceBytes);
-  const translatedDoc = await PDFDocument.load(translatedBytes);
-  const totalPages = Math.max(sourceDoc.getPageCount(), translatedDoc.getPageCount());
-
-  for (let index = 0; index < totalPages; index += 1) {
-    const sourceEmbedded = index < sourceDoc.getPageCount()
-      ? (await mergedDoc.embedPdf(sourceBytes, [index]))[0]
-      : null;
-    const translatedEmbedded = index < translatedDoc.getPageCount()
-      ? (await mergedDoc.embedPdf(translatedBytes, [index]))[0]
-      : null;
-
-    const sourceWidth = sourceEmbedded?.width || 0;
-    const sourceHeight = sourceEmbedded?.height || 0;
-    const translatedWidth = translatedEmbedded?.width || 0;
-    const translatedHeight = translatedEmbedded?.height || 0;
-    const pageWidth = Math.max(1, sourceWidth + translatedWidth);
-    const pageHeight = Math.max(sourceHeight, translatedHeight, 1);
-    const page = mergedDoc.addPage([pageWidth, pageHeight]);
-
-    if (sourceEmbedded) {
-      page.drawPage(sourceEmbedded, {
-        x: 0,
-        y: pageHeight - sourceHeight,
-        width: sourceWidth,
-        height: sourceHeight,
-      });
-    }
-    if (translatedEmbedded) {
-      page.drawPage(translatedEmbedded, {
-        x: sourceWidth,
-        y: pageHeight - translatedHeight,
-        width: translatedWidth,
-        height: translatedHeight,
-      });
-    }
-  }
-
-  return mergedDoc.save();
+function buildMergedComparePdf(sourceBytes, translatedBytes) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("../../workers/pdf-merge-worker.js", import.meta.url), {
+      type: "module",
+    });
+    worker.addEventListener("message", (event) => {
+      worker.terminate();
+      if (event.data?.ok) {
+        resolve(event.data.bytes);
+        return;
+      }
+      reject(new Error(event.data?.error || "生成对照 PDF 失败"));
+    }, { once: true });
+    worker.addEventListener("error", (event) => {
+      worker.terminate();
+      reject(new Error(event.message || "生成对照 PDF 失败"));
+    }, { once: true });
+    worker.postMessage({ sourceBytes, translatedBytes }, [sourceBytes, translatedBytes]);
+  });
 }
 
 export function mountReaderDialogFeature({

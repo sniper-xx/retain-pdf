@@ -453,31 +453,73 @@ impl Db {
             (None, None) => format!("{base_sql} ORDER BY jobs.updated_at DESC LIMIT ?1 OFFSET ?2"),
         };
         let mut stmt = conn.prepare(&query)?;
-        let rows = match (status_json.as_ref(), workflow_json.as_ref()) {
-            (Some(status_json), Some(workflow_json)) => stmt.query_map(
-                params![status_json, workflow_json, limit as i64, offset as i64],
-                row_to_job_snapshot,
-            )?,
-            (Some(status_json), None) => stmt.query_map(
-                params![status_json, limit as i64, offset as i64],
-                row_to_job_snapshot,
-            )?,
-            (None, Some(workflow_json)) => stmt.query_map(
-                params![workflow_json, limit as i64, offset as i64],
-                row_to_job_snapshot,
-            )?,
-            (None, None) => {
-                stmt.query_map(params![limit as i64, offset as i64], row_to_job_snapshot)?
-            }
-        };
+        let requested_limit = limit as usize;
         let mut jobs = Vec::new();
-        for row in rows {
-            match row {
-                Ok(job) => jobs.push(job),
-                Err(error) => {
-                    eprintln!("[db] skipping malformed job row during list_jobs: {error}");
+        if requested_limit == 0 {
+            return Ok(jobs);
+        }
+
+        let target_offset = offset as usize;
+        let batch_limit = limit.max(20).saturating_mul(4).clamp(100, 500);
+        let mut raw_offset = 0u32;
+        let mut valid_seen = 0usize;
+        let mut malformed_count = 0usize;
+        let mut last_malformed_error = None;
+
+        while jobs.len() < requested_limit {
+            let rows = match (status_json.as_ref(), workflow_json.as_ref()) {
+                (Some(status_json), Some(workflow_json)) => stmt.query_map(
+                    params![
+                        status_json,
+                        workflow_json,
+                        batch_limit as i64,
+                        raw_offset as i64
+                    ],
+                    row_to_job_snapshot,
+                )?,
+                (Some(status_json), None) => stmt.query_map(
+                    params![status_json, batch_limit as i64, raw_offset as i64],
+                    row_to_job_snapshot,
+                )?,
+                (None, Some(workflow_json)) => stmt.query_map(
+                    params![workflow_json, batch_limit as i64, raw_offset as i64],
+                    row_to_job_snapshot,
+                )?,
+                (None, None) => stmt.query_map(
+                    params![batch_limit as i64, raw_offset as i64],
+                    row_to_job_snapshot,
+                )?,
+            };
+            let mut raw_count = 0usize;
+            for row in rows {
+                raw_count += 1;
+                match row {
+                    Ok(job) => {
+                        if valid_seen < target_offset {
+                            valid_seen += 1;
+                            continue;
+                        }
+                        jobs.push(job);
+                        if jobs.len() >= requested_limit {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        malformed_count += 1;
+                        last_malformed_error = Some(error.to_string());
+                    }
                 }
             }
+            if raw_count < batch_limit as usize {
+                break;
+            }
+            raw_offset = raw_offset.saturating_add(raw_count as u32);
+        }
+        if malformed_count > 0 {
+            eprintln!(
+                "[db] skipped {malformed_count} malformed job row(s) during list_jobs; last error: {}",
+                last_malformed_error.unwrap_or_else(|| "unknown".to_string())
+            );
         }
         Ok(jobs)
     }
@@ -1052,6 +1094,55 @@ mod tests {
         drop(conn);
 
         let jobs = db.list_jobs(20, 0, None, None).expect("list jobs");
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].job_id, "job-valid");
+    }
+
+    #[test]
+    fn list_jobs_reads_past_malformed_rows_to_fill_limit() {
+        let fs = TestDbFs::new();
+        let db = fs.db();
+        db.init().expect("init db");
+
+        let valid_job = sample_job("job-valid", &fs.data_root);
+        db.save_job(&valid_job).expect("save valid job");
+
+        let conn = Connection::open(&fs.db_path).expect("open sqlite");
+        conn.execute(
+            r#"
+            INSERT INTO jobs (
+                job_id, workflow, status_json, created_at, updated_at, started_at, finished_at,
+                upload_id, pid, command_json, request_json, error, stage, stage_detail,
+                progress_current, progress_total, log_tail_json, result_json, runtime_json, failure_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+            "#,
+            params![
+                "job-bad-newer",
+                serde_json::to_string(&WorkflowKind::Book).expect("workflow json"),
+                serde_json::to_string(&JobStatusKind::Succeeded).expect("status json"),
+                "9999-01-01T00:00:00Z",
+                "9999-01-01T00:00:00Z",
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<i64>::None,
+                "[]",
+                "{\"invalid\":true}",
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<i64>::None,
+                Option::<i64>::None,
+                "[]",
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+            ],
+        )
+        .expect("insert malformed row");
+        drop(conn);
+
+        let jobs = db.list_jobs(1, 0, None, None).expect("list jobs");
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].job_id, "job-valid");
     }

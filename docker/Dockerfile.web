@@ -1,14 +1,16 @@
-FROM docker.io/library/node:20-alpine AS deps
+FROM docker.io/library/node:20-alpine AS frontend-build
 
 WORKDIR /frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build && npm prune --omit=dev
 
 FROM docker.io/library/nginx:1.27-alpine
 
-COPY frontend/ /usr/share/nginx/html/
-COPY --from=deps /frontend/node_modules /usr/share/nginx/html/node_modules
+COPY --from=frontend-build /frontend/ /usr/share/nginx/html/
 COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker/entrypoint-web.sh /docker-entrypoint.d/99-runtime-config.sh
 

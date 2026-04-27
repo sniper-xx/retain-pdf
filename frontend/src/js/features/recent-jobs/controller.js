@@ -15,6 +15,8 @@ import {
   setRecentJobsLoadMoreLoading,
 } from "./view.js";
 
+const RECENT_JOBS_FETCH_LIMIT = 100;
+
 function padDatePart(value) {
   return `${value}`.padStart(2, "0");
 }
@@ -78,7 +80,7 @@ function isPrimaryRecentJob(item) {
 }
 
 async function collectRecentJobsPage(fetchJobList, apiPrefix, startOffset, selectedDate, pageSize) {
-  const fetchLimit = Math.max(pageSize, 20);
+  const fetchLimit = Math.max(pageSize, RECENT_JOBS_FETCH_LIMIT);
   const collected = [];
   let latestInvocationSummary = null;
   let nextOffset = startOffset;

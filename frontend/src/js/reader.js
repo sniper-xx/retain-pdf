@@ -4,7 +4,7 @@ import {
   PDFLinkService,
   PDFViewer,
 } from "../../node_modules/pdfjs-dist/web/pdf_viewer.mjs";
-import { isMockMode, readerMessageTargetOrigin } from "./config.js";
+import { buildApiHeaders, isMockMode, readerMessageTargetOrigin } from "./config.js";
 import { $ } from "./dom.js";
 import { API_PREFIX } from "./constants.js";
 import {
@@ -24,6 +24,7 @@ const PDFJS_CMAP_URL = new URL("../../node_modules/pdfjs-dist/cmaps/", import.me
 const PDFJS_STANDARD_FONT_DATA_URL = new URL("../../node_modules/pdfjs-dist/standard_fonts/", import.meta.url).toString();
 
 const PDF_TO_CSS_UNITS = 96 / 72;
+const PDF_RANGE_CHUNK_SIZE = 1024 * 1024;
 
 const readerState = {
   totalPages: 0,
@@ -261,6 +262,17 @@ async function loadPdfDocument(itemOrUrl, label) {
   if (!url) {
     return null;
   }
+  if (!`${url}`.startsWith("mock://")) {
+    return pdfjsLib.getDocument({
+      url,
+      httpHeaders: buildApiHeaders(),
+      rangeChunkSize: PDF_RANGE_CHUNK_SIZE,
+      cMapUrl: PDFJS_CMAP_URL,
+      cMapPacked: true,
+      standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
+    }).promise;
+  }
+
   const resp = await fetchProtected(url);
   if (!resp.ok) {
     throw new Error(`读取${label}失败。(${resp.status})`);

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::error::AppError;
 use crate::models::MarkdownView;
 use crate::routes::common::ok_json;
-use crate::routes::job_helpers::stream_file;
+use crate::routes::job_helpers::{stream_file, stream_file_with_headers};
 use crate::services::artifacts::{attach_job_id_header, build_bundle_for_job};
 use crate::storage_paths::{resolve_markdown_images_dir, resolve_markdown_path};
 
@@ -17,6 +17,7 @@ use super::super::JobsFacade;
 impl<'a> JobsFacade<'a> {
     pub async fn download_job_document_response(
         &self,
+        headers: &HeaderMap,
         job_id: &str,
         ocr_only: bool,
         resolve_path: impl Fn(&crate::models::JobSnapshot, &Path) -> Option<PathBuf>,
@@ -26,7 +27,7 @@ impl<'a> JobsFacade<'a> {
         let job = self.load_supported_job_snapshot(job_id, ocr_only)?;
         let path = resolve_path(&job, &self.query.config.data_root)
             .ok_or_else(|| AppError::not_found(format!("{not_ready_label}: {job_id}")))?;
-        stream_file(path, content_type, None).await
+        stream_file_with_headers(path, content_type, None, Some(headers)).await
     }
 
     pub async fn markdown_response(

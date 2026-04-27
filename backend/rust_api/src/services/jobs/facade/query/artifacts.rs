@@ -1,7 +1,8 @@
+use axum::http::HeaderMap;
 use axum::response::Response;
 
 use crate::error::AppError;
-use crate::routes::job_helpers::stream_file;
+use crate::routes::job_helpers::{stream_file, stream_file_with_headers};
 use crate::services::artifacts::{
     artifact_is_direct_downloadable, build_markdown_bundle_for_job, resolve_registry_artifact,
 };
@@ -12,6 +13,7 @@ use super::super::JobsFacade;
 impl<'a> JobsFacade<'a> {
     pub async fn registered_artifact_response(
         &self,
+        headers: &HeaderMap,
         job_id: &str,
         artifact_key: &str,
         include_job_dir: bool,
@@ -48,6 +50,12 @@ impl<'a> JobsFacade<'a> {
                 "artifact not ready: {job_id}/{artifact_key}"
             )));
         }
-        stream_file(path, &item.content_type, item.file_name.clone()).await
+        stream_file_with_headers(
+            path,
+            &item.content_type,
+            item.file_name.clone(),
+            Some(headers),
+        )
+        .await
     }
 }
