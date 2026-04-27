@@ -154,6 +154,7 @@ export function mountStatusDetailFeature({
   fetchTranslationItems,
   fetchTranslationItem,
   replayTranslationItem,
+  bindLaunchButton = true,
 } = {}) {
   const translationState = {
     jobId: "",
@@ -572,7 +573,9 @@ export function mountStatusDetailFeature({
   }
 
   function bindEvents() {
-    $("status-detail-btn")?.addEventListener("click", () => openStatusDetailDialog("overview"));
+    if (bindLaunchButton) {
+      $("status-detail-btn")?.addEventListener("click", () => openStatusDetailDialog("overview"));
+    }
     document.querySelectorAll(".detail-tab").forEach((tab) => {
       tab.addEventListener("click", () => {
         activateDetailTab(tab.dataset.tab || "overview");

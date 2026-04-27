@@ -17,6 +17,7 @@ import {
 import {
   collectMarkdownImageRefs,
   hasReadyManifestArtifact,
+  resolveManifestArtifactUrl,
   resolveJobMarkdownContract,
   resolveMarkdownAssetUrl,
 } from "./job-artifacts.js";
@@ -676,6 +677,7 @@ async function initializePage() {
   bindStageHistoryLauncher();
   bindEventsLauncher();
   bindProtectedDownloadLink("detail-pdf-btn", (jobId) => `${jobId}.pdf`);
+  bindProtectedDownloadLink("detail-source-pdf-btn", (jobId) => `${jobId}-source.pdf`);
   bindProtectedDownloadLink("detail-markdown-raw-btn", (jobId) => `${jobId}.md`);
   bindProtectedDownloadLink("detail-markdown-json-btn", (jobId) => `${jobId}-markdown.json`);
   const jobId = getJobIdFromQuery();
@@ -753,6 +755,8 @@ async function initializePage() {
   );
   setActionLink("detail-reader-btn", buildReaderPageUrl(job.job_id), readerEnabled);
   setActionLink("detail-pdf-btn", actions.pdf, actions.pdfEnabled && !!actions.pdf);
+  const sourcePdfUrl = resolveManifestArtifactUrl(manifestPayload, "source_pdf");
+  setActionLink("detail-source-pdf-btn", sourcePdfUrl, !!sourcePdfUrl);
 
   try {
     const markdownPayload = await fetchJobMarkdown(jobId, API_PREFIX);

@@ -1,5 +1,4 @@
 import { $ } from "./dom.js";
-import * as pdfjsLib from "../../node_modules/pdfjs-dist/build/pdf.mjs";
 import {
   apiBase,
   applyKeyInputs,
@@ -64,7 +63,6 @@ import { mountBrowserCredentialsFeature } from "./features/credentials/browser.j
 import { mountDeveloperFeature } from "./features/developer/controller.js";
 import { mountJobRuntimeFeature } from "./features/job-runtime/controller.js";
 import { mountRecentJobsFeature } from "./features/recent-jobs/controller.js";
-import { mountStatusDetailFeature } from "./features/status-detail/controller.js";
 import { mountUploadFeature } from "./features/upload/controller.js";
 import { mountWorkflowFeature } from "./features/workflow/controller.js";
 import { state } from "./state.js";
@@ -86,12 +84,9 @@ const DEVELOPER_PASSWORD = "Gk265157!";
 const WORKFLOW_BOOK = "book";
 const WORKFLOW_TRANSLATE = "translate";
 const WORKFLOW_RENDER = "render";
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "../../node_modules/pdfjs-dist/build/pdf.worker.mjs",
-  import.meta.url,
-).toString();
 const PDFJS_CMAP_URL = new URL("../../node_modules/pdfjs-dist/cmaps/", import.meta.url).toString();
 const PDFJS_STANDARD_FONT_DATA_URL = new URL("../../node_modules/pdfjs-dist/standard_fonts/", import.meta.url).toString();
+const PDFJS_WORKER_SRC = new URL("../../node_modules/pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
 let browserCredentialsFeature = null;
 let developerFeature = null;
 let artifactDownloadsFeature = null;
@@ -102,8 +97,25 @@ let readerDialogComponentPromise = null;
 let readerDialogFeature = null;
 let readerDialogFeaturePromise = null;
 let statusDetailFeature = null;
+let statusDetailFeaturePromise = null;
 let uploadFeature = null;
 let workflowFeature = null;
+let pdfjsModulePromise = null;
+
+async function loadPdfJs() {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = import("../../node_modules/pdfjs-dist/build/pdf.mjs")
+      .then((module) => {
+        module.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+        return module;
+      })
+      .catch((error) => {
+        pdfjsModulePromise = null;
+        throw error;
+      });
+  }
+  return pdfjsModulePromise;
+}
 
 function normalizeWorkflow(value) {
   const workflow = `${value || ""}`.trim();
@@ -156,6 +168,42 @@ async function ensureReaderDialogFeature() {
   return readerDialogFeaturePromise;
 }
 
+async function ensureStatusDetailFeature() {
+  if (statusDetailFeature) {
+    return statusDetailFeature;
+  }
+  if (!statusDetailFeaturePromise) {
+    statusDetailFeaturePromise = import("./components/dialogs/status-detail-dialog.js")
+      .then(() => import("./features/status-detail/controller.js"))
+      .then(({ mountStatusDetailFeature }) => {
+        const feature = mountStatusDetailFeature({
+          state,
+          apiPrefix: API_PREFIX,
+          fetchTranslationDiagnostics,
+          fetchTranslationItems,
+          fetchTranslationItem,
+          replayTranslationItem,
+          bindLaunchButton: false,
+        });
+        feature.bindEvents();
+        statusDetailFeature = feature;
+        if (state.currentJobSnapshot) {
+          renderJob(state.currentJobSnapshot, state.currentJobEvents, state.currentJobManifest);
+        }
+        return feature;
+      })
+      .catch((error) => {
+        statusDetailFeaturePromise = null;
+        throw error;
+      });
+  }
+  return statusDetailFeaturePromise;
+}
+
+function activateStatusDetailTabIfLoaded(name) {
+  statusDetailFeature?.activateDetailTab(name);
+}
+
 function setText(id, value) {
   const el = $(id);
   if (el) {
@@ -181,6 +229,7 @@ async function countPdfPages(file) {
   if (!file) {
     return 0;
   }
+  const pdfjsLib = await loadPdfJs();
   const doc = await pdfjsLib.getDocument({
     data: await file.arrayBuffer(),
     cMapUrl: PDFJS_CMAP_URL,
@@ -243,7 +292,7 @@ async function initializePage() {
     resetUploadedFile,
     applyWorkflowMode: () => workflowFeature?.applyWorkflowMode(),
     updateJobWarning,
-    activateDetailTab: (name) => statusDetailFeature?.activateDetailTab(name),
+    activateDetailTab: activateStatusDetailTabIfLoaded,
   });
   workflowFeature = mountWorkflowFeature({
     state,
@@ -367,14 +416,6 @@ async function initializePage() {
     getJobRuntimeFeature: () => jobRuntimeFeature,
     onDesktopConfigSaved: () => workflowFeature?.applyWorkflowMode(),
   });
-  statusDetailFeature = mountStatusDetailFeature({
-    state,
-    apiPrefix: API_PREFIX,
-    fetchTranslationDiagnostics,
-    fetchTranslationItems,
-    fetchTranslationItem,
-    replayTranslationItem,
-  });
   jobRuntimeFeature = mountJobRuntimeFeature({
     state,
     apiPrefix: API_PREFIX,
@@ -391,13 +432,12 @@ async function initializePage() {
     applyWorkflowMode: () => workflowFeature?.applyWorkflowMode(),
     clearPageRanges: () => uploadFeature?.clearPageRanges(),
     updateJobWarning,
-    activateDetailTab: (name) => statusDetailFeature?.activateDetailTab(name),
+    activateDetailTab: activateStatusDetailTabIfLoaded,
     onReaderDialogSync: () => readerDialogFeature?.syncToolbarActions(),
     onReaderDialogClose: () => readerDialogFeature?.close(),
   });
   developerFeature.bindEvents();
   artifactDownloadsFeature.bindEvents();
-  statusDetailFeature.bindEvents();
   appShellFeature.bindChrome();
   $("file")?.addEventListener("change", handleFileSelected);
   $("ocr_provider")?.addEventListener("input", saveBrowserStoredConfig);
@@ -411,6 +451,14 @@ async function initializePage() {
   $("page-range-clear-btn")?.addEventListener("click", () => uploadFeature?.clearPageRanges());
   $("cancel-btn")?.addEventListener("click", () => jobRuntimeFeature?.cancelCurrentJob());
   $("stop-btn")?.addEventListener("click", () => jobRuntimeFeature?.stopPolling());
+  $("status-detail-btn")?.addEventListener("click", async () => {
+    try {
+      const feature = await ensureStatusDetailFeature();
+      feature.openStatusDetailDialog("overview");
+    } catch (error) {
+      setText("error-box", error.message || String(error));
+    }
+  });
   $("reader-btn")?.addEventListener("click", async (event) => {
     event.preventDefault();
     const currentTarget = event.currentTarget;

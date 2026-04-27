@@ -209,9 +209,10 @@ function updateRing(job) {
   const ringElapsed = $("status-ring-elapsed");
   const stageIcon = $("status-stage-icon");
   const pdfBtn = $("pdf-btn");
+  const sourceBtn = $("source-pdf-btn");
   const readerBtn = $("reader-btn");
   const actionRow = document.querySelector(".status-ring-downloads");
-  if (!ringLabel || !ringValue || !ringElapsed || !stageIcon || !pdfBtn || !readerBtn || !actionRow) {
+  if (!ringLabel || !ringValue || !ringElapsed || !stageIcon || !pdfBtn || !sourceBtn || !readerBtn || !actionRow) {
     return;
   }
   const presentation = resolveDisplayedStagePresentation(job, state.currentJobEvents);
@@ -232,11 +233,13 @@ function updateRing(job) {
     stageIcon.innerHTML = iconMarkup;
   }
   const pdfReady = !pdfBtn.classList.contains("disabled") && job.status === "succeeded";
+  const sourceReady = !sourceBtn.classList.contains("disabled") && job.status === "succeeded";
   const readerReady = !readerBtn.classList.contains("disabled") && job.status === "succeeded";
   if (statusCard?.syncPrimaryActions && !statusCard?.renderSnapshot) {
-    statusCard.syncPrimaryActions({ pdfReady, readerReady });
+    statusCard.syncPrimaryActions({ pdfReady, sourceReady, readerReady });
   } else {
     pdfBtn.classList.toggle("hidden", !pdfReady);
+    sourceBtn.classList.toggle("hidden", !sourceReady);
     readerBtn.classList.toggle("hidden", !readerReady);
     actionRow.classList.remove("hidden");
   }
@@ -708,6 +711,8 @@ export function updateActionButtons(job, manifestPayload = null) {
   });
   setActionLink("markdown-bundle-btn", markdownBundleUrl, !!markdownBundleUrl);
   setActionLink("pdf-btn", actions.pdf, actions.pdfEnabled && !!actions.pdf);
+  const sourcePdfUrl = resolveManifestArtifactUrl(manifestPayload, "source_pdf");
+  setActionLink("source-pdf-btn", sourcePdfUrl, !!sourcePdfUrl);
   setActionLink("markdown-btn", actions.markdownJson, actions.markdownJsonEnabled && !!actions.markdownJson);
   setActionLink("markdown-raw-btn", actions.markdownRaw, actions.markdownRawEnabled && !!actions.markdownRaw);
   const readerEnabled = Boolean(
@@ -916,6 +921,7 @@ export function renderJob(payload, eventsPayload = null, manifestPayload = null)
       progressFallbackText: "-",
       progressPercent: job.progress_percent,
       pdfReady: actions.pdfEnabled && !!actions.pdf && job.status === "succeeded",
+      sourceReady: !!resolveManifestArtifactUrl(manifestPayload, "source_pdf") && job.status === "succeeded",
       readerReady: readerEnabled && job.status === "succeeded",
       cancelEnabled: actions.cancelEnabled && !!actions.cancel,
       backHomeVisible: isTerminalStatus(job.status),

@@ -29,9 +29,11 @@ export function mountArtifactDownloadsFeature({
         ? `${jobId}-markdown.zip`
         : link.id === "pdf-btn"
           ? `${jobId}.pdf`
-          : link.id === "markdown-raw-btn"
-            ? `${jobId}.md`
-            : `${jobId}.json`;
+          : link.id === "source-pdf-btn"
+            ? `${jobId}-source.pdf`
+            : link.id === "markdown-raw-btn"
+              ? `${jobId}.md`
+              : `${jobId}.json`;
     if (!frontendApiKey() && !isMockMode()) {
       triggerNativeDownload(url, fallbackName);
       return;
@@ -59,7 +61,7 @@ export function mountArtifactDownloadsFeature({
   }
 
   function bindEvents() {
-    document.querySelectorAll("#download-btn, #markdown-bundle-btn, #pdf-btn, #markdown-btn, #markdown-raw-btn")
+    document.querySelectorAll("#download-btn, #markdown-bundle-btn, #pdf-btn, #source-pdf-btn, #markdown-btn, #markdown-raw-btn")
       .forEach((node) => {
         node.addEventListener("click", handleProtectedArtifactClick);
       });

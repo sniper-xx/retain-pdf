@@ -31,6 +31,15 @@ class StatusTaskToolbar extends HTMLElement {
           </svg>
           <span>下载 PDF</span>
         </a>
+        <a id="source-pdf-btn" class="button-link secondary disabled task-toolbar-btn hidden" href="#" target="_blank" rel="noopener noreferrer" aria-label="下载原文" title="下载原文">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 4.8h6.1L17 8.7v10.5H7V4.8Z" stroke="currentColor" stroke-width="1.55" stroke-linejoin="round"/>
+            <path d="M13 4.95V8.8h3.85" stroke="currentColor" stroke-width="1.55" stroke-linejoin="round"/>
+            <path d="M12 10.65v5.35" stroke="currentColor" stroke-width="1.55" stroke-linecap="round"/>
+            <path d="M9.95 14.05 12 16.1l2.05-2.05" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>下载原文</span>
+        </a>
       `;
       return;
     }
