@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -23,6 +24,25 @@ from services.translation.llm.providers.deepseek.translation_client import (
 )
 from services.translation.llm.providers.deepseek.translation_client import translate_single_item_tagged_text as deepseek_translate_single_item_tagged_text
 from services.translation.llm.providers.deepseek.translation_client import translate_single_item_with_decision as deepseek_translate_single_item_with_decision
+
+from services.translation.llm.providers.openai.client import DEFAULT_API_KEY_ENV as OPENAI_DEFAULT_API_KEY_ENV
+from services.translation.llm.providers.openai.client import DEFAULT_BASE_URL as OPENAI_DEFAULT_BASE_URL
+from services.translation.llm.providers.openai.client import DEFAULT_MODEL as OPENAI_DEFAULT_MODEL
+from services.translation.llm.providers.openai.client import build_headers as openai_build_headers
+from services.translation.llm.providers.openai.client import chat_completions_url as openai_chat_completions_url
+from services.translation.llm.providers.openai.client import get_api_key as openai_get_api_key
+from services.translation.llm.providers.openai.client import get_session as openai_get_session
+from services.translation.llm.providers.openai.client import is_transport_error as openai_is_transport_error
+from services.translation.llm.providers.openai.client import normalize_base_url as openai_normalize_base_url
+from services.translation.llm.providers.openai.client import request_chat_content as openai_request_chat_content
+from services.translation.llm.providers.openai.translation_client import parse_translation_payload as openai_parse_translation_payload
+from services.translation.llm.providers.openai.translation_client import translate_batch_once as openai_translate_batch_once
+from services.translation.llm.providers.openai.translation_client import translate_single_item_plain_text as openai_translate_single_item_plain_text
+from services.translation.llm.providers.openai.translation_client import (
+    translate_single_item_plain_text_unstructured as openai_translate_single_item_plain_text_unstructured,
+)
+from services.translation.llm.providers.openai.translation_client import translate_single_item_tagged_text as openai_translate_single_item_tagged_text
+from services.translation.llm.providers.openai.translation_client import translate_single_item_with_decision as openai_translate_single_item_with_decision
 
 
 TransportRequestFn = Callable[..., str]
@@ -80,13 +100,70 @@ DEEPSEEK_RUNTIME = TranslationProviderRuntime(
     translate_single_item_with_decision=deepseek_translate_single_item_with_decision,
 )
 
+OPENAI_RUNTIME = TranslationProviderRuntime(
+    provider_id="openai",
+    provider_family="openai_official",
+    default_api_key_env=OPENAI_DEFAULT_API_KEY_ENV,
+    default_model=OPENAI_DEFAULT_MODEL,
+    default_base_url=OPENAI_DEFAULT_BASE_URL,
+    build_headers=openai_build_headers,
+    chat_completions_url=openai_chat_completions_url,
+    get_api_key=openai_get_api_key,
+    get_session=openai_get_session,
+    is_transport_error=openai_is_transport_error,
+    normalize_base_url=openai_normalize_base_url,
+    request_chat_content=openai_request_chat_content,
+    parse_translation_payload=openai_parse_translation_payload,
+    translate_batch_once=openai_translate_batch_once,
+    translate_single_item_plain_text=openai_translate_single_item_plain_text,
+    translate_single_item_plain_text_unstructured=openai_translate_single_item_plain_text_unstructured,
+    translate_single_item_tagged_text=openai_translate_single_item_tagged_text,
+    translate_single_item_with_decision=openai_translate_single_item_with_decision,
+)
 
-def resolve_active_provider_runtime() -> TranslationProviderRuntime:
+PROVIDER_REGISTRY: dict[str, TranslationProviderRuntime] = {
+    "deepseek": DEEPSEEK_RUNTIME,
+    "openai": OPENAI_RUNTIME,
+}
+
+
+def resolve_active_provider_runtime(
+    provider_id: str | None = None,
+    *,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> TranslationProviderRuntime:
+    if provider_id and provider_id.lower() in PROVIDER_REGISTRY:
+        return PROVIDER_REGISTRY[provider_id.lower()]
+
+    env_provider = os.environ.get("PDF_TRANSLATOR_PROVIDER", "").strip().lower()
+    if env_provider in PROVIDER_REGISTRY:
+        return PROVIDER_REGISTRY[env_provider]
+
+    if base_url:
+        normalized_url = base_url.lower()
+        if "api.openai.com" in normalized_url:
+            return OPENAI_RUNTIME
+        if "api.deepseek.com" in normalized_url:
+            return DEEPSEEK_RUNTIME
+
+    if model:
+        normalized_model = model.lower()
+        if any(normalized_model.startswith(p) for p in ("gpt-", "o1", "o3", "chatgpt")):
+            return OPENAI_RUNTIME
+        if normalized_model.startswith("deepseek"):
+            return DEEPSEEK_RUNTIME
+
+    if os.environ.get("OPENAI_API_KEY") and not os.environ.get("DEEPSEEK_API_KEY"):
+        return OPENAI_RUNTIME
+
     return DEEPSEEK_RUNTIME
 
 
 __all__ = [
     "DEEPSEEK_RUNTIME",
+    "OPENAI_RUNTIME",
+    "PROVIDER_REGISTRY",
     "TranslationProviderRuntime",
     "resolve_active_provider_runtime",
 ]

@@ -4,8 +4,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import fitz
-import pikepdf
-from pikepdf import Name
+
+try:
+    import pikepdf
+    from pikepdf import Name
+except ImportError:
+    pikepdf = None
+    Name = None
 
 from services.rendering.redaction.redaction_analysis import page_has_large_background_image
 

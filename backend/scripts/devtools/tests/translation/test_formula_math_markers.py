@@ -1,8 +1,7 @@
 import sys
 from pathlib import Path
-import pytest
 
-REPO_SCRIPTS_ROOT = Path("/home/wxyhgk/tmp/Code/backend/scripts")
+REPO_SCRIPTS_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_SCRIPTS_ROOT))
 
 from services.rendering.formula.core.markdown import build_markdown_from_direct_text
@@ -345,12 +344,9 @@ def test_formula_normalizer_preserves_structural_commands() -> None:
     assert normalize_formula_for_latex_math(r"\left ( x _ { i } + y ^ 2 \right )") == r"\left ( x_{i} + y^2 \right )"
 
 
-@pytest.mark.parametrize(
-    ("source", "expected_normalized"),
-    [(case["source"], case["expected_normalized"]) for case in MATH_NORMALIZATION_CASES],
-)
-def test_formula_normalization_casebook_regressions(source: str, expected_normalized: str) -> None:
-    assert normalize_formula_for_latex_math(source) == expected_normalized
+def test_formula_normalization_casebook_regressions() -> None:
+    for case in MATH_NORMALIZATION_CASES:
+        assert normalize_formula_for_latex_math(case["source"]) == case["expected_normalized"]
 
 
 def test_formula_map_can_be_recovered_from_protected_map() -> None:

@@ -3,11 +3,16 @@ from __future__ import annotations
 import io
 import zlib
 
-import pikepdf
 from PIL import Image
 from PIL import ImageFile
-from pikepdf import Name
-from pikepdf import PdfImage
+
+try:
+    import pikepdf
+    from pikepdf import Name, PdfImage
+except ImportError:
+    pikepdf = None
+    Name = None
+    PdfImage = None
 
 
 IMAGE_RECOMPRESS_MIN_BYTES = 20_000

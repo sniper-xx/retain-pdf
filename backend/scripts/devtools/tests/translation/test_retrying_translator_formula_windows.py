@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 
-REPO_SCRIPTS_ROOT = Path("/home/wxyhgk/tmp/Code/backend/scripts")
+REPO_SCRIPTS_ROOT = Path(__file__).resolve().parents[3]
 
 
 def load_retrying_translator():

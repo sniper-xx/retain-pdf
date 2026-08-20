@@ -3,10 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import fitz
-import pikepdf
 from PIL import Image
-from pikepdf import Name
-from pikepdf import Pdf
+
+try:
+    import pikepdf
+    from pikepdf import Name, Pdf
+except ImportError:
+    pikepdf = None
+    Name = None
+    Pdf = None
 
 from services.rendering.compress.analysis import max_display_rect_by_xref
 from services.rendering.compress.analysis import target_pixel_size
