@@ -5,6 +5,7 @@
 建议优先阅读：
 
 - [API 总入口](./API.md)
+- [OpenAI 开源额度申请指南与文案草稿](./OPENAI_CREDITS_APPLICATION.md)
 - [工程评价与后续执行计划](./工程评价与后续执行计划.md)
 - [架构与 API 契约任务台账](./architecture_tasks.csv)
 - [2026-04-15 Rust API 去耦任务清单](./250415_task.csv)
